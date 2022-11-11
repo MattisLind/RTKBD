@@ -1,5 +1,8 @@
 # RTKBD
-Emulation of a IBM PC RT keyboard.
+This project aims at emulating a IBM PC RT keyboad with a standard IBM model M keyboard. There are many similarities but still some differences. The major difference is that a standard PS/2 model M is using scan code set 2 while a IBM PC RT keyboard (and most terminal keyboards) are using scan code set 3.
+The IBM RT PC keyboard also provide the ID code as part of the RESET sequence. This is not the case with a standard IBM Model M keyboard.
+
+Since I had trouble getting emulation working with the existing PS2Dev Arduino library I took the code out of the existing rubber dome keyboard that someone already had dumped and disassmbled it.
 
 ## Dumps
 
