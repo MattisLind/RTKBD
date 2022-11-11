@@ -1,0 +1,1670 @@
+;
+;  D48 V3.4.1 8048 Disassembly of 71201_8749.bin
+;  2022/10/31 10:40
+;
+	org	0
+;
+X0000:	dis	i
+	dis	tcnti
+	mov	a,#0c1h
+	outl	p1,a
+	mov	a,#0
+	outl	p2,a
+	mov	a,#0
+	outl	bus,a
+	sel	rb0
+	mov	r2,#96h
+	mov	a,#0d2h
+	call	X02dc        ; set timeout 
+X0012:	jtf	X0016
+	jmp	X0012
+;
+X0016:	mov	a,#0d2h
+	call	X02dc				 ; set tiemout	
+	djnz	r2,X0012
+X001c:	stop	tcnt
+	jtf	X001f
+X001f:	sel	rb0
+	clr	a
+	mov	r0,#7fh        ; top of RAM
+X0023:	mov	@r0,a    ; clear memory
+	djnz	r0,X0023     ; all the way down to 0.
+	call	X04b2        ; init some data memory locations 5c, 5d, 5e, 5f with values 0x60, 0x04, 0x60, 0x00 
+	call	X0733
+	call	X006e
+	jnz	X0036
+	call	X02e2
+	jnz	X0038
+	mov	r0,#0aah      ; Startup byte sent to host after reset.
+	jmp	X003a
+;
+X0036:	call	X02e2
+X0038:	mov	r0,#0fah
+X003a:	orl	p2,#7
+X003c:	jnt0	X003c    ; wait while clk is low.
+	jni	X0058            ; jump if data is low
+X0040:	mov	a,r0       ; move value to send into a
+	call	send          ; send it!
+	call	delay210       ; set timer 210. Each cycle is 1.36 MHz @ 11 MHz  = 286 us.
+X0045:	jnt0	X0049    ; jump if clock low
+	jni	X004d	           ; jump if data is low
+X0049:	jtf	X005c			 ; the timer has expired
+	jmp	X0045
+;
+X004d:	call	stopCounterAndReceive    ; stop counter and then receive   - data low, clock is high
+	xrl	a,#0feh
+	jz	X0040
+X0053:	mov	a,r7				; we got a command instead of receive
+X0054:	clr	a	
+	cpl	a									; fake FFH as a command. 
+	jmp	processCmd
+;
+X0058:	call	receive  ; we get here if data is low do a  receive
+	jmp	X0054
+;
+X005c:	call	delay119  ; start timer value 119 = 162 us.
+X005e:	jnt0	X006c  ; jump if clock is low
+	jni	X004d          ; clk is high - what is data? 
+	call	stopcounter  ; data was high as well. 
+X0064:	mov	a,#0bfh  ; Now it is time to send message
+	call	send        ; send 0xbf
+	call	delay210     ; delay again before sending next byte
+	jmp	X07c3
+;
+
+X006c:	jmp	X07cb
+;
+
+X07cb:	jtf	X07cf       ; test flag 
+	jmp	X005e             ; timer hasn't expired yet
+;
+X07cf:	call	stopcounter   ; so if happen to get into a CLK=0 state in the startup phase for too long we'll just goto loop
+	clr	f0
+	cpl	f0
+	jmp	loop
+;
+
+
+X07c3:	jnt0	X07c7     ; jump if clock is low
+	jni	X07d5             ; jump if data is low
+X07c7:	jtf	X07dd
+	jmp	X07c3
+;
+
+X07d5:	call	stopCounterAndReceive     ; data is low clock is high
+	xrl	a,#0feh														; resend
+	jz	X07f0
+	jmp	X0053
+;
+X07dd:	call	delay119     ; data is high clock is high
+X07df:	jnt0	X07ec     ; jump if clock is low
+	jni	X07d5             ; jump if data is low
+X07e3:	call	stopcounter     ; stop timer and clear flag
+	jmp	X05d9             ; send b0 or b1 depending on port bit.
+
+X05d9:	orl	p2,#80h   ; data high
+	in	a,p2            ; highest bit on p2 is used to set the code!
+	jb7	X05e2
+	mov	a,#0b1h         ; lower code is 0xb1
+	jmp	X07e7
+;
+X05e2:	mov	a,#0b0h  ; or code is 0xb0
+	jmp	X07e7
+;
+;
+X07e7:	call	send
+	clr	f0
+	jmp	loop
+;
+X07ec:	jtf	X07cf
+	jmp	X07df
+;
+X07f0:	jmp	X0064													; go back and try send the BFh char.
+
+
+X006e:	mov	r0,#0
+	mov	r1,#0ffh
+X0072:	mov	a,r1
+	movp	a,@a
+	add	a,r0
+	mov	r0,a
+	djnz	r1,X0072
+	mov	a,r1
+	movp	a,@a
+	add	a,r0
+	mov	r0,a
+	jmp	X01eb
+;
+loop:	jnt0	X00a0    ; jump if clock is low. loop!
+	jni	X00a2            ; jump if data is low
+	mov	r0,#68h
+	mov	a,@r0            ; some kind of code that takes key presses from buffers and try to send them.
+	jz	X0093
+	call	X04c0
+	call	sendNonWait
+	jnz	X0091
+	mov	r0,#68h
+	mov	@r0,#0
+X0091:	jmp	X0100
+;
+X0093:	mov	r0,#5fh
+	mov	a,@r0
+	jz	X00a0
+	call	X04c0
+	call	sendNonWait
+	jnz	X00a0
+	call	X04dd
+X00a0:	jmp	X0100				; do the keyboard scanning
+;
+X00a2:	call	receiveNoWait     ; go receive a character if data is low and clock is high
+	jnz	X00ac
+	mov	r0,#59h
+	mov	a,@r0
+	sel	rb0
+	jmp	processCmd
+;
+X00ac:	sel	rb0
+	mov	a,#0feh    ; resend
+	call	send    ; call send
+	jmp	X0100
+;
+processCmd:	
+	add	a,#13h  ; check if supported command. Adding 19
+	jnc	X00be         ; jump if code is lower than 0xed.
+	mov	r0,#59h
+	mov	a,@r0
+	cpl	a
+	add	a,#0c4h       ; add complement of code to c4
+	jmpp	@a          ; jump table
+;
+X00be:	mov	a,#0fch ; send not supported code
+	call	send
+	jmp	loop          ; go back to loop
+;
+X00c4:
+;           ff fe fd fc fb fa f9 f8 f7 f6 f5 f4 f3 f2 f1 f0 ef ee ed    f0 and ee not supported.
+jumptable:  d7 d9 db dd df e1 e3 e5 e7 e9 eb ed ef f1 f3 be be f5 f7
+X00d7:
+	jmp	X0500  ; FF reset routine
+X00d9:
+	jmp	X0520  ; FE Resend
+X00db:
+	jmp	X0529  ; FD Set key type Make
+X00dd:
+	jmp	X052d  ; FC Set key type make/break
+X00df:
+	jmp	X0531  ; FB Set key Type Typematic
+X00e1:
+	jmp	X0535  ; FA keys typematic / make /break
+X00e3:
+	jmp	X057e  ; F9 Set all keys make
+X00e5:
+	jmp	X0582  ; F8 Set all keys make/break
+X00e7:
+	jmp	X0586  ; F7 Set all keys Typematic
+X00e9:
+	jmp	X0594  ; F6 Set Default
+X00eb:	
+  jmp	X0592  ; F5 Keyboard disable
+X00ed:
+	jmp	X059e  ; F4 Keyboard enable
+X00ef:	
+  jmp	X05a5  ; F3 Set repeat rate
+X00f1:
+	jmp	X05b3  ; F2 Read ID
+X00f3:
+	jmp	X00f9  ; F1 Unknown?
+X00f5:
+	jmp	X0523  ; EE Echo
+X00f7:
+	jmp	X05c5  ; ED Set/Reset LEDs.
+X00f9:	call	X03da     ; F1 Unknown?
+	call	sendAck           ; send ack
+	cpl	f1
+	jmp	loop             ; back to loop.
+;
+X0100:	jf0	X0147
+	mov	r7,#1
+X0104:	call	X024a
+	mov	a,r7
+	add	a,#0
+	movp3	a,@a
+	outl	bus,a
+	mov	a,r7
+	add	a,#1fh
+	mov	r0,a
+	mov	a,@r0
+	anl	a,#2
+	jnz	X0149
+	orl	p1,#1
+	orl	p1,#2
+	orl	p1,#4
+	anl	p1,#0fbh
+	jnt1	X0126
+X011e:	anl	p1,#0fdh
+	mov	a,@r0
+X0121:	anl	a,#0fch
+X0123:	mov	@r0,a
+	jmp	X017c
+;
+X0126:	anl	p1,#0fdh
+	orl	p1,#1
+	orl	p1,#2
+	orl	p1,#4
+	anl	p1,#0fbh
+	jt1	X011e
+	anl	p1,#0fdh
+	mov	a,@r0
+	anl	a,#1
+	jz	X0141
+	mov	a,@r0
+	orl	a,#3
+	mov	@r0,a
+	call	X0200
+	jmp	X017c
+;
+X0141:	mov	a,@r0
+X0142:	orl	a,#1
+	mov	@r0,a
+	jmp	X017c
+;
+X0147:	jmp	X0606
+;
+X0149:	anl	p1,#0feh
+	orl	p1,#2
+	orl	p1,#4
+	anl	p1,#0fbh
+	jt1	X015b
+X0153:	anl	p1,#0fdh
+	mov	a,@r0
+	orl	a,#3
+	mov	@r0,a
+	jmp	X017c
+;
+X015b:	anl	p1,#0fdh
+	anl	p1,#0feh
+	orl	p1,#2
+	orl	p1,#4
+	anl	p1,#0fbh
+	jnt1	X0153
+	anl	p1,#0fdh
+	mov	a,@r0
+	anl	a,#1
+	jnz	X0176
+	mov	a,@r0
+	anl	a,#0fch
+	mov	@r0,a
+	call	X0225
+	jmp	X017c
+;
+X0176:	mov	a,@r0
+	anl	a,#0feh
+	mov	@r0,a
+	jmp	X017c
+;
+X017c:	inc	r7
+	mov	a,r7
+	xrl	a,#37h
+	jnz	X0104
+	mov	r7,#37h
+X0184:	call	X024a
+	mov	a,r7
+	add	a,#0
+	movp3	a,@a
+	outl	bus,a
+	mov	a,r7
+	add	a,#0e9h
+	mov	r0,a
+	mov	a,@r0
+	anl	a,#20h
+	jnz	X01c7
+	orl	p1,#1
+	orl	p1,#2
+	orl	p1,#4
+	anl	p1,#0fbh
+	jnt1	X01a6
+X019e:	anl	p1,#0fdh
+	mov	a,@r0
+	anl	a,#0cfh
+	mov	@r0,a
+	jmp	X0600
+;
+X01a6:	anl	p1,#0fdh
+	orl	p1,#1
+	orl	p1,#2
+	orl	p1,#4
+	anl	p1,#0fbh
+	jt1	X019e
+	anl	p1,#0fdh
+	mov	a,@r0
+	anl	a,#10h
+	jz	X01c1
+	mov	a,@r0
+	orl	a,#30h
+	mov	@r0,a
+	call	X0203
+	jmp	X0600
+;
+X01c1:	mov	a,@r0
+	orl	a,#10h
+	mov	@r0,a
+	jmp	X0600
+;
+X01c7:	jmp	X0700
+;
+X01c9:	sel	rb1
+	mov	a,r2
+	sel	rb0
+	mov	r2,a
+	add	a,#0dah
+	jc	X01d8
+	sel	rb1
+	mov	a,r4
+	sel	rb0
+	jz	X01d8
+	mov	r2,#19h
+X01d8:	ret
+;
+delay119:	call	stopcounter
+	mov	a,#77h					 ; set a timeout of 119
+	call	X02dc          ; set a timeout 
+	ret
+;
+delay210:	mov	a,#0d2h    ; set a timeout of 210 cycles 
+	call	X02dc			     ; start a counter. argument in a.
+	ret
+;
+stopCounterAndReceive:	
+	call	stopcounter
+	call	receive      ; call receive
+	mov	r7,a
+	ret
+;
+X01eb:	dec	r1
+X01ec:	mov	a,r1
+	movp	a,@a
+	add	a,r0
+	mov	r0,a
+	djnz	r1,X01ec
+	mov	a,r1
+	movp	a,@a
+	add	a,r0
+	mov	r0,a
+X01f6:	mov	a,r1
+	movp3	a,@a
+	add	a,r0
+	mov	r0,a
+	djnz	r1,X01f6
+	jmp	X02f1
+;
+	org	200h
+;
+X0200:	mov	a,@r0
+	jmp	X0205
+;
+X0203:	mov	a,@r0
+	swap	a
+X0205:	rr	a
+	rr	a
+	anl	a,#3
+	jf1	X020e
+	add	a,#11h
+	jmpp	@a
+;
+X020e:	add	a,#15h
+	jmpp	@a
+X0211:	
+; jump table data 19 1b 1d 1f 19 1b 21  23
+X0219:	
+	jmp	X0407
+X021b:
+	jmp	X0413
+X021f:
+	jmp	X0432
+X0221:
+	jmp	X0451
+X0223:
+	jmp	X0461
+;
+X0225:	mov	a,@r0
+	jmp	X022a
+;
+X0228:	mov	a,@r0
+	swap	a
+X022a:	rr	a
+	rr	a
+	anl	a,#3
+	jf1	X0233
+	add	a,#36h
+	jmpp	@a
+;
+X0233:	add	a,#3ah
+	jmpp	@a
+X0236:
+; jump table data : 3e 40  42 44 3e 40 46 48
+;
+X023e:	jmp	X0406
+X0240:
+	jmp	X040d
+X0242:
+	jmp	X0437
+X0244:
+	jmp	X0437
+X0246:
+	jmp	X0466
+;
+X0248:	jmp	X0466
+;
+X024a:	jtf	X024d
+	ret
+;
+X024d:	djnz	r2,X0262
+	call	X02d8
+	call	X01c9
+	jnt0	X0255
+X0255:	mov	r0,#5fh
+	mov	a,@r0
+	jnz	X0261
+	mov	r0,#56h
+	mov	a,@r0
+	call	X0476
+	call	X047a
+X0261:	ret
+;
+X0262:	sel	rb1
+	mov	a,r5
+	sel	rb0
+	call	X02dc					; start a counter. argument in a.
+	ret
+;
+X0268:	mov	r0,#5bh
+	mov	a,r7
+	mov	@r0,a
+	mov	r0,#0
+	mov	r1,#36h
+X0270:	mov	a,r0
+	add	a,#6eh
+	movp3	a,@a
+	xrl	a,r6
+	jz	X027c
+	inc	r0
+	djnz	r1,X0270
+	jmp	X0283
+;
+X027c:	mov	r1,#0f3h
+	mov	a,r7
+	anl	a,#0ch
+	jmp	X029d
+;
+X0283:	mov	r0,#0
+	mov	r1,#36h
+X0287:	mov	a,r0
+	add	a,#0a4h
+	movp3	a,@a
+	xrl	a,r6
+	jz	X0298
+	inc	r0
+	djnz	r1,X0287
+	mov	r0,#5bh
+	mov	a,@r0
+	mov	r7,a
+	clr	a
+	cpl	a
+	ret
+;
+X0298:	mov	r1,#3fh
+	mov	a,r7
+	anl	a,#0c0h
+X029d:	mov	r7,a
+	mov	a,r0
+	add	a,#20h
+	mov	r0,a
+	mov	a,@r0
+	anl	a,r1
+	orl	a,r7
+	mov	@r0,a
+	mov	r0,#5bh
+	mov	a,@r0
+	mov	r7,a
+	clr	a
+	ret
+;
+X02ac:	sel	rb1
+	mov	a,r1
+	orl	a,#0e0h
+	add	a,#5
+	jc	X02c6
+	jmp	X02be
+;
+X02b6:	mov	a,r1
+	orl	a,#0e0h
+	add	a,#1ch
+	jnc	X02c3
+	ret
+;
+X02be:	mov	r5,#0f2h
+	mov	a,r4
+	jb0	X02b6
+X02c3:	mov	r5,#0eah
+	ret
+;
+X02c6:	mov	r5,#0e2h
+	mov	a,r4
+	jb0	X02cd
+	mov	r5,#0d3h
+X02cd:	ret
+;
+X02ce:	sel	rb1
+	mov	a,r3
+	sel	rb0
+	mov	r2,a
+	mov	a,#0a4h
+	sel	rb1
+	mov	r5,a
+	jmp	X02da
+;
+X02d8:	call	X02ac
+X02da:	mov	a,r5
+	sel	rb0
+; start a counter
+X02dc:	stop	tcnt    ; first stop the counter
+	mov	t,a							; set timeout value
+	jtf	X02e0						; clear flag if set.
+X02e0:	strt	t				; start the counter
+	ret
+;
+X02e2:	mov	r0,#7fh
+X02e4:	mov	a,r0
+	xch	a,@r0
+	xch	a,@r0
+	xrl	a,r0
+	jnz	X02ee
+	djnz	r0,X02e4
+	clr	a
+	ret
+;
+X02ee:	clr	a
+	cpl	a
+	ret
+;
+X02f1:	dec	r1
+X02f2:	mov	a,r1
+	movp	a,@a
+	add	a,r0
+	mov	r0,a
+	djnz	r1,X02f2
+	mov	a,r1
+	movp	a,@a
+	add	a,r0
+	mov	r0,a
+	jmp	X04f1
+;
+	org	300h
+;
+X0300:	mov	a,r7
+	ins	a,bus
+	in	a,p1
+	in	a,p2
+	
+	movd	a,p4
+	movd	a,p5
+	movd	a,p6
+	movd	a,p7
+	orl	a,r0
+	orl	a,r1
+	orl	a,r2
+	orl	a,r3
+X030d:	orl	a,r4
+	mov	a,r7
+	orl	a,r6
+	inc	@r0
+	inc	@r1
+	jb0	X0313
+	call	X0015
+	jtf	X0317
+	anl	a,@r0
+	anl	a,@r1
+	jb2	X0353
+	call	X0255
+X031e:	inc	r0
+	inc	r1
+	inc	r2
+	inc	r3
+	inc	r4
+	inc	r5
+	inc	r6
+X0325:	inc	r7
+	anl	a,r0
+X0327:	anl	a,r1
+X0328:	anl	a,r2
+	anl	a,r3
+	anl	a,r4
+	anl	a,r5
+	xch	a,@r0
+	xch	a,@r1
+	X0123
+	mov	a,#24h
+X0331:	en	tcnti
+	jnt0	X0327
+	add	a,@r0
+	add	a,@r1
+	mov	t,a
+	X03ff
+	mov	a,r7
+	jmp	X0328
+;
+	org	33ch
+;
+	xch	a,r2
+X033d:	xch	a,r6
+	add	a,r3
+	mov	a,r7
+	add	a,r5
+	orl	a,r7
+	da	a
+	add	a,r7
+	dec	r0
+X0345:	xrl	a,@r0
+	X07e8
+X0347:	djnz	r0,X03c9
+	xrl	a,@r1
+	djnz	r1,X03ca
+	jb6	X03da
+	X07cb
+	dec	r3
+	xrl	a,#0dbh
+	movp3	a,@a
+X0353:	djnz	r2,X03cc
+	call	X06dc
+	jmp	X07ec
+;
+	dec	r5
+	xrl	a,r5
+	djnz	r5,X0300
+	outl	bus,a
+X035e:	add	a,#4
+X0360:	en	i
+X0361:	
+	dec	a
+	orl	a,@r0
+	orl	a,@r1
+	orl	a,#44h
+	strt	cnt
+	jnt1	X0347
+	X06c1
+	X06ff
+X036c:	mov	a,r7
+;
+	org	36eh
+;
+	movd	a,p6
+	jtf	X031e
+	jnt0	X0325
+	xch	a,r6
+	jt0	X033d
+	movd	p6,a
+	jnt1	X0345
+	orl	a,r6
+X037a:	strt	t
+	mov	a,r7
+	X030d
+	movd	a,p5
+	dis	i
+	inc	r5
+	jmp	X012d
+;
+	xch	a,r4
+	dis	tcnti
+	movd	p4,a
+	orl	a,#44h
+	orl	a,r5
+	call	X025b
+	anl	a,r4
+	call	X001c
+	inc	r3
+	mov	a,#2bh
+	call	X0133
+	X0142
+	mov	a,t
+	orl	a,r3
+	orl	a,r4
+	jb2	X0353
+	anl	a,r2
+	jb0	X0313
+	inc	r2
+	X0121
+	xch	a,@r1
+	xch	a,r2
+	jb1	X0331
+	outl	p2,a
+	orl	a,@r1
+	orl	a,r1
+	orl	a,r2
+	mov	a,r7
+	anl	a,r1
+	inc	@r1
+	mov	a,r7
+	inc	r1
+	xch	a,r1
+	outl	p1,a
+	mov	a,r7
+	anl	a,r0
+	rrc	a
+	jmp	X0361
+;
+	add	a,r6
+	stop	tcnt
+	X0360
+	add	a,@r0
+	add	a,r7
+	add	a,r5
+	add	a,r2
+	jf1	X036c
+	add	a,r3
+	add	a,r1
+	rr	a
+	ent0	clk
+	X0372
+	jb3	X0370
+	addc	a,r6
+	addc	a,r5
+	call	X037a
+	addc	a,@r1
+	jmp	X047c
+;
+	addc	a,r1
+X03c9:	ins	a,bus
+X03ca:	dec	a
+	movd	a,p7
+X03cc:	inc	a
+	inc	r7
+	clr	a
+	xch	a,r7
+	cpl	a
+	movd	p7,a
+	swap	a
+	orl	a,r7
+	jt1	X035e
+	da	a
+	anl	a,r7
+	mov	t,a
+	mov	a,r7
+X03da:	call	stopcounter
+	mov	r3,#0
+	mov	r1,#1fh
+X03e0:	inc	r1
+	mov	a,@r1
+	anl	a,#0ah
+	xrl	a,#0ah
+	jnz	X03e9
+	inc	r3
+X03e9:	mov	a,@r1
+	anl	a,#0a0h
+	xrl	a,#0a0h
+	jnz	X03f1
+	inc	r3
+X03f1:	mov	a,r1
+	xrl	a,#55h
+	jnz	X03e0
+	mov	r1,#57h
+	mov	a,r3
+	mov	@r1,a
+	ret
+;
+stopcounter:	stop	tcnt				; stop counter
+	jtf	X03fe								; clear flag
+X03fe:	ret								; and return
+;
+X03ff:	nop
+;
+	org	401h
+;
+	call	X0476
+	call	X047a
+	ret
+;
+X0406:	ret
+;
+X0407:	mov	a,r7
+	call	X0476
+	call	X047a
+	ret
+;
+X040d:	mov	a,r7
+	call	X0476
+	call	X047e
+	ret
+;
+X0413:	sel	rb1
+	mov	r4,#0
+X0416:	sel	rb0
+	mov	r0,#57h
+	inc	@r0
+	mov	a,@r0
+	xrl	a,#1
+	jnz	X042a
+	dec	r0
+	mov	a,r7
+	mov	@r0,a
+	mov	a,r7
+	call	X0476
+	call	X047a
+	call	X02ce
+	ret
+;
+X042a:	call	stopcounter
+	mov	a,r7
+	call	X0476
+	call	X047a
+	ret
+;
+X0432:	sel	rb1
+	mov	r4,#1
+	jmp	X0416
+;
+X0437:	mov	r0,#57h
+	mov	a,@r0
+	jz	X0440
+	dec	a
+	mov	@r0,a
+	jnz	X0443
+X0440:	call	stopcounter
+	ret
+;
+X0443:	xrl	a,#1
+	jnz	X0450
+	call	X073e
+	mov	r0,#56h
+	mov	@r0,a
+	call	X0476
+	call	X02ce
+X0450:	ret
+;
+X0451:	sel	rb1
+	mov	r4,#0
+X0454:	sel	rb0
+	mov	a,r7
+	call	X0476
+	call	X047a
+	mov	r0,#56h
+	mov	a,r7
+	mov	@r0,a
+	call	X02ce
+	ret
+;
+X0461:	sel	rb1
+	mov	r4,#1
+	jmp	X0454
+;
+X0466:	mov	a,r7
+	call	X0476
+	call	X047e
+	mov	r0,#56h
+	mov	a,r7
+	xrl	a,@r0
+	jnz	X0475
+	call	stopcounter
+	call	stopcounter
+X0475:	ret
+;
+X0476:	add	a,#6dh
+	movp3	a,@a
+	ret
+;
+X047a:	mov	r6,#0
+X047c:	jmp	X0480
+;
+X047e:	mov	r6,#0f0h
+X0480:	mov	r0,a
+	mov	r1,#5dh
+	mov	a,@r1
+	jz	X04a2
+	dec	r1
+	mov	a,@r1
+	mov	r1,a
+	mov	a,r6
+	mov	@r1,a
+	inc	r1
+	mov	a,r0
+	mov	@r1,a
+	mov	r1,#5dh
+	mov	a,@r1
+	dec	a
+	mov	@r1,a
+	dec	r1
+	mov	a,@r1
+	inc	a
+	inc	a
+	mov	@r1,a
+X0498:	xrl	a,#68h
+	jnz	X049e
+	mov	@r1,#60h
+X049e:	mov	r1,#5fh
+	inc	@r1
+	ret
+;
+X04a2:	dec	r1
+	mov	a,@r1
+	dec	a
+	dec	a
+	mov	r1,a
+	xrl	a,#5eh
+	jnz	X04ad
+	mov	r1,#66h
+X04ad:	clr	a
+	mov	@r1,a
+	inc	r1
+	mov	@r1,a
+	ret
+;
+X04b2:	mov	r1,#5ch  ; init some data memory locations 5c, 5d, 5e, 5f with values 0x60, 0x04, 0x60, 0x00
+	mov	@r1,#60h
+	inc	r1
+	mov	@r1,#4
+	inc	r1
+	mov	@r1,#60h
+	inc	r1
+	mov	@r1,#0
+	ret
+;
+X04c0:	mov	r0,#68h
+	mov	a,@r0
+	jz	X04c7
+	jmp	X04ce
+;
+X04c7:	mov	r0,#5eh
+	mov	a,@r0
+	xch	a,r0
+	mov	a,@r0
+	jnz	X04d1
+X04ce:	inc	r0
+	jmp	X04db
+;
+X04d1:	inc	r0
+	mov	a,@r0
+	mov	r1,#69h
+	mov	@r1,a
+	dec	r1
+	clr	a
+	cpl	a
+	mov	@r1,a
+	dec	r0
+X04db:	mov	a,@r0
+	ret
+;
+X04dd:	mov	r1,#5fh
+	mov	a,@r1
+	dec	a
+	mov	@r1,a
+	dec	r1
+	mov	a,@r1
+	inc	a
+	inc	a
+	mov	@r1,a
+	xrl	a,#68h
+	jnz	X04ed
+	mov	@r1,#60h
+X04ed:	mov	r1,#5dh
+	inc	@r1
+	ret
+;
+X04f1:	dec	r1
+X04f2:	mov	a,r1
+	movp	a,@a
+	add	a,r0
+	mov	r0,a
+	djnz	r1,X04f2
+	mov	a,r1
+	movp	a,@a
+	add	a,r0
+	mov	r0,a
+	jmp	X05ee
+;
+	org	500h
+reset:
+	call	sendAck    ; send ack
+	mov	r2,#3eh
+	mov	a,#0f4h
+	call	X02dc          ; set a timer for 244 cycles 
+X0508:	jnt0	X0516    ;  jump if clock is low
+	jni	X0510            ;  jump if data is low
+	djnz	r2,X0508       ;  otherwise we loop
+	jmp	X0000            ;  for some time. Then we start from the beginning.
+;
+X0510:	call	stopcounter
+	call	receive      ; call receive
+X0514:	jmp	processCmd
+;
+X0516:	jtf	X051c       ; jump if flag
+	mov	r2,#3eh
+	jmp	X0508
+;
+X051c:	call	stopcounter
+	jmp	loop
+;
+X0520:	mov	a,r4        ; resend
+	jmp	X0525
+;
+X0523:	mov	a,#0eeh		  ; EE Echo
+X0525:	call	send     ; send
+	jmp	loop	            ; go to loop
+;
+
+X0529:	mov	r7,#0     ; FD Set key type Make
+	jmp	X0537
+;
+X052d:	mov	r7,#44h   ; FC Set key type make/break
+	jmp	X0537
+;
+X0531:	mov	r7,#88h   ; FC Set key type make/break
+	jmp	X0537
+;
+X0535:	mov	r7,#0cch   ; FA Set all keys typematic / make /break
+X0537:	call	X04b2    ; setting make/brake/typematic for keys.
+X0539:	call	sendAck
+X053b:	call	receive    ; call receive
+	mov	r6,a              ; save copy in r6
+	xrl	a,#0feh          ;  resend 
+	jz	X0539
+	mov	a,r6
+	add	a,#13h
+	jc	X0555            ; check if this is a command or an argument
+X0547:	call	X0268    ; not a command
+	jnz	X054f
+	call	sendAck          ; send ack
+	jmp	X053b
+;
+X054f:	mov	a,#0fch
+	call	send            ; send not supported
+	jmp	X053b
+;
+X0555:	mov	a,r6        ; it was a command
+	xrl	a,#0f0h           ; if f0h it is not a command anyhow.
+	jz	X0547
+	mov	a,r6
+	xrl	a,#0efh           ; if efh it is not a command.
+	jz	X0547
+	mov	a,r7              ; saved command, 44h, 88h or cch
+	jb7	X0574
+	jb6	X0570
+	mov	a,#0fdh
+X0566:	xrl	a,r6       ; if the argument is the original command we take ..
+	jz	X0537            ; .. next character
+	call	X03da
+	clr	f0
+	cpl	f0
+	mov	a,r6
+	jmp	processCmd            ; process next
+;
+X0570:	mov	a,#0fch
+	jmp	X0566
+;
+X0574:	jb6	X057a
+	mov	a,#0fbh
+	jmp	X0566
+;
+X057a:	mov	a,#0fah
+	jmp	X0566
+;
+
+X057e:	mov	r7,#0     ; F9 Set all keys make
+	jmp	X0588
+;
+X0582:	mov	r7,#44h   ; F8 Set all keys make/break 
+	jmp	X0588
+;
+X0586:	mov	r7,#88h   ; F7 Set all keys Typematic
+X0588:	call	sendAck
+X058a:	call	X04b2
+	call	X07ad
+	call	X03da
+	jmp	loop           ; go back in loop.
+;
+X0592:	clr	f0        ; F5 Keyboard disable
+	cpl	f0
+X0594:	call	sendAck   ; F6 Set Default - send ack 
+	call	stopcounter         ; do a received
+	call	X04b2
+	call	X0733
+	jmp	loop
+;
+X059e:	call	sendAck   ; F4 Keyboard enable
+	call	X04b2
+	clr	f0
+	jmp	loop
+;
+X05a5:	call	sendAck    ; F3 Set repeat rate - send ack
+	call	receive          ; call receive
+	mov	r6,a
+	jb7	X0514
+	call	sendAck
+	mov	a,r6
+X05af:	call	X0757
+	jmp	loop
+;
+X05b3:	call	sendAck   ; F2 Read ID - send ack
+X05b5:	jnt0	X05b5   ; jump if clock is low
+	jni	X05bb           ; jump if data is low
+	jmp	X0064
+;
+X05bb:	call	receive   ; call receive
+	mov	a,r7
+	xrl	a,#0feh
+	jz	X05b3
+	mov	a,r7
+	jmp	processCmd
+;
+X05c5:	call	sendAck   ; ED Set/Reset LEDs - send ack
+	call	receive     ; call receive
+	mov	r7,a        ; save a in r7
+	jb7	X0514       ; is any of the four high bits are set we interpret this as a command and not an argument.
+	jb6	X0514
+	jb5	X0514
+	jb4	X0514
+	call	sendAck         ; send ack
+	mov	a,r7 
+	call	X0795         ; set / reset LEDs
+	jmp	loop           ; back to loop.
+;
+
+X05e6:
+	orl	p1,#80h        ; restore after transaction terminated by host - data high    
+	orl	p1,#40h        ; clk high
+	sel	rb0
+	clr	a
+	cpl	a              ; return -1 in. Bad status
+	ret
+;
+X05ee:	nop
+X05ef:	mov	a,r1
+	movp	a,@a
+	add	a,r0
+	mov	r0,a
+	djnz	r1,X05ef
+	jmp	X06f7
+;
+	org	600h
+;
+X0600:	inc	r7
+	mov	a,r7
+	xrl	a,#6dh
+	jnz	X0608
+X0606:	jmp	loop
+;
+X0608:	jmp	X0184
+;
+sendAck:	mov	a,#0fah    ; send ack
+	call	send
+	ret
+;
+send:
+	mov	r0,#6ah    		     ; send routine
+	mov	@r0,a					     ; store away data to send
+X0612:
+	mov	r0,#6ah
+	mov	a,@r0
+	jnt0	X0612            ; wait while clock is low.
+	jni	X061e              ; jump if data is low - the host want to send.
+	call	sendNonWait      ; both clock and data is high go ahead send character.
+	jnz	X0612              ; retry if we got interrupted.
+	ret
+;
+X061e:	mov	a,psw ; 
+	anl	a,#0f8h
+	mov	psw,a              ; set stackpointer to 0!
+	jmp	X00a2              ; then we just can jmp somewhere.
+;
+/*
+int send (char data) {
+	int ret;
+	do {
+		while (digitalRead(CLK)==0);
+		if (digitalRead(DATA) == 0) return -1;   
+		ret = sendNonWait();
+	} while (ret==-1);
+	return 0;
+}
+
+
+*/
+sendNonWait:	sel	rb1
+	mov	r0,#58h
+	mov	@r0,a
+	mov	a,#0
+	mov	r0,#1
+	mov	r6,#0
+	call	sendBits         ; send start bit
+	mov	a,r0
+	jnz	X0653
+	mov	r0,#58h
+	mov	a,@r0
+	mov	r0,#8
+	call	sendBits         ; send byte
+	mov	a,r0
+	jnz	X0653
+	mov	a,r6
+	cpl	a
+	mov	r0,#1
+	call	sendBits         ; send parity 
+	mov	a,r0
+	jnz	X0653
+	mov	a,#0ffh
+	mov	r0,#1
+	call	sendBits         ; send stop bit
+	mov	r0,#58h
+	mov	a,@r0
+	sel	rb0
+	mov	r4,a
+	clr	a         ; ok return
+	ret
+;
+X0653:	jmp	X05e6
+/*
+
+int restore() {
+	gohi(CLK);
+	gohi(DATA);
+	return -1;
+}
+
+
+int sendNonWait (char data) {
+	int numOnes = 0;
+	if (sendBits(1, 0, &numOnes)!=0) return restore();
+	if (sendBits(8, data, &numOnes)!=0) return restore();
+	if (sendBits(1,~numOnes, &numOnes)!=0) return restore();
+	sendBits(1, 1, &numOnes);
+	return 0;
+}
+
+
+*/
+
+
+;
+sendBits:
+	mov	r7,#1
+X0657:
+	djnz	r7,X0657     ; delay
+	rrc	a              ; rotate lowest bit into carry
+	jnc	X0673          ; if carry is clear
+	orl	p1,#80h        ; Set data high
+	inc	r6
+	nop
+X0660:
+	mov	r7,#3  ; delay total delay is 16 us
+X0662:
+	djnz	r7,X0662
+	jnt0	X0677        ; return  if clock is low - probably checkin if the host wants something.
+	anl	p1,#0bfh       ; Set clk low
+	mov	r7,#0ch     
+X066a:
+	djnz	r7,X066a	   ; long delay   35 us.
+	orl	p1,#40h        ; set clk high
+	jnt0	X0677        ; return if clock is low
+	djnz	r0,sendBits  ; next bit
+	ret
+;
+X0673:	anl	p1,#7fh ; set data low
+	jmp	X0660
+;
+X0677:	ret
+
+/*
+int sendBits (int numBits, int data, int * numOnes) {
+	do {
+		delayMicroseconds(SHORT);
+		if (data & 1) {
+			gohi(DATA);
+			(*numOnes)++;
+		} else {
+			golo(DATA);
+		}
+		data >>=1;
+		delayMicroseconds(SHORT);
+		if (digitalRead(CLK)==0) return numBits;
+		golo(CLK);
+		delayMicroseconds(LONG);
+		gohi(CLK);
+		if (digitalRead(CLK)==0) return numBits;
+		numBits--;
+	} while (numBits != 0);
+	return numBits;
+}
+
+*/
+
+
+; This routine waits for correct condition and then reads a char.
+; If there is an error it sends a resend message and retry the operation.
+;
+receive:	jnt0	receive    ; wait while clock is low. Start of receive routine
+	jni	X067e            ; continue if data is low.
+	jmp	receive            ; wait until we have clock high and data low.
+;
+X067e:	call	receiveNoWait    ; go receive a character
+	jnz	X0687							; failed send a resend.
+	mov	r0,#59h						; retreive the received char
+	mov	a,@r0							; and store it into a
+	sel	rb0								; back to rb0 again
+	ret
+;
+X0687:	sel	rb0
+	mov	a,#0feh         ; resend
+	call	send
+	jmp	receive
+;
+
+/*
+
+int receive () {
+	int ret;
+	do {
+		do {
+			while (digitalRead(CLK) == 0);
+		} while (digitalRead(DATA)==1);
+		ret = receiveNoWait();
+		if (ret!=-1) return ret;
+		send(0xfe);
+	} while (ret ==-1);
+}
+
+*/
+
+
+receiveNoWait:	sel	rb1
+	mov	a,#0
+	mov	r0,#8
+	mov	r6,#0
+	call	readBits   ; Read 8 bits
+	mov	r0,#59h
+	mov	@r0,a     ; store received data into 0x59
+	mov	r0,#5ah
+	mov	a,r6
+	mov	@r0,a     ; store number of 1 into 0x5A
+	mov	r0,#2
+	call	readBits   ; read 2 bits - parity and stopbit
+	cpl	a
+	jb7	X06b9     ; no stop bit.
+	mov	r0,#5ah   ; 
+	jb6	X06b3     ; jump if parity bit zero.
+	mov	a,@r0			
+	nop
+	jb0	X06c0			; jump if odd number of ones in data but parity bit is 0 - parity error
+	nop
+;
+	org	6afh
+;
+X06af:					; ok parity 
+	call	sendAckBit
+	clr	a
+	ret
+;
+X06b3:					; parity bit is 0.
+	mov	a,@r0			; get number of ones
+	cpl	a					; invert
+	jb0	X06c0			; jump if even number of ones.
+	jmp	X06af     ; ok parity 
+;
+X06b9:					; no stopbit received - loop until we get a proper stop bit.
+	mov	r0,#1
+	call	readBits    ; read 1 bit
+	cpl	a						 ; invert bit
+	jb7	X06b9				 ; jump if not stopbit received - try again to get that stopbit.
+X06c0:						 ; bad parity or framing error. 
+	call	sendAckBit
+	clr	a
+	cpl	a						 ; return FFh
+	ret
+;
+/*
+int receiveNoWait () {
+	int data, numOnes=0, parityAndStopbit, dummy=0, tmp=0;
+	data = readBits(8, &numOnes);
+	parityAndStopbit = readBits(2, &dummy);
+	if ((parityAndStopbit & 0x80)==0) {
+		do {
+			tmp = readBits(1, &dummy)
+		} while ((tmp & 0x80)==0);
+		return -1;
+	}
+	if ((parityAndStopbit & 0x40)==0 && ((numOnes & 1) == 1)) || (((parityAndStopbit & 0x40)==0x40 && (numOnes & 1) == 0))) {
+		sendAckBit();
+		ret = 0;
+	} else {
+		sendAckBit();
+	}
+}
+
+*/
+
+readBitsLoop:
+	mov	r7,#2     ; some kind of reading routine
+	nop
+X06c8:	djnz	r7,X06c8 ; short delay
+readBits:	
+	anl	p1,#0bfh   ; set clock low
+	mov	r7,#0ch
+X06ce:	djnz	r7,X06ce ; long delay
+	orl	p1,#40h  ; set clock high
+	mov	r7,#4
+	nop
+X06d5:	djnz	r7,X06d5  ; short delay
+	clr	c
+	jni	X06e0   ; jump if data is low
+	cpl	c
+	inc	r6
+X06dc:	rrc	a  ; rotate the carry into the high bit
+	djnz	r0,readBitsLoop
+	ret
+;
+
+X06e0:	jmp	X06dc
+/*
+int readBits(int numBits, int * numOnes) {
+	int data=0;
+	while (1) {
+		golo(CLK);
+		delayMicroseconds(LONG);
+		gohi(CLK);
+		delayMicroseconds(SHORT);
+		if (digitalRead(DATA)==1) {
+			(*numOnes)++;
+			data |= 0x80;
+		}
+		numBits--;
+		if (numBits == 0) return data;
+		data >>= 1;
+		delayMicroseconds(SHORT);
+	}
+}
+*/
+
+;      Routine to send the ACK bit
+sendAckBit:
+	anl	p1,#7fh           ; set data low
+	mov	r7,#5
+X06e6:	djnz	r7,X06e6
+	anl	p1,#0bfh          ; set clock low
+	mov	r7,#0ch
+X06ec:	djnz	r7,X06ec
+	orl	p1,#40h						; set clock high
+	mov	r7,#5
+X06f2:	djnz	r7,X06f2
+	orl	p1,#80h
+	ret
+
+/*
+void sendAckBit () {
+	golo(DATA);
+	delayMicroseconds(SHORT);
+	golo(CLK);
+	delayMicroseconds(LONG);
+	gohi(CLK);
+	delayMicroseconds(SHORT);
+	gohi(DATA);
+}
+
+*/
+
+;
+X06f7:	mov	a,r1
+	movp	a,@a
+	add	a,r0
+	mov	r0,a
+	djnz	r1,X06f7
+	jmp	X07f2
+;
+X06ff:	nop
+X0700:	anl	p1,#0feh
+	orl	p1,#2
+	orl	p1,#4
+	anl	p1,#0fbh          
+	jt1	X0712
+X070a:	anl	p1,#0fdh   
+	mov	a,@r0
+	orl	a,#30h
+	mov	@r0,a
+	jmp	X0600
+;
+X0712:	anl	p1,#0fdh    
+	anl	p1,#0feh
+	orl	p1,#2
+	orl	p1,#4
+	anl	p1,#0fbh
+	jnt1	X070a
+	anl	p1,#0fdh
+	mov	a,@r0
+	anl	a,#10h
+	jnz	X072d
+	mov	a,@r0
+	anl	a,#0cfh
+	mov	@r0,a
+X0729:	call	X0228
+	jmp	X0600
+;
+X072d:	mov	a,@r0
+	anl	a,#0efh
+	mov	@r0,a
+	jmp	X0600
+;
+X0733:	mov	r7,#88h
+	call	X07ad
+	clr	f1
+	cpl	f1
+X0739:	mov	a,#2bh
+	call	X0757
+	ret
+;
+X073e:	mov	r1,#1fh
+X0740:	inc	r1
+	mov	a,@r1
+	anl	a,#0ah
+	xrl	a,#0ah
+	jnz	X074c
+	mov	a,r1
+	add	a,#0e1h
+	ret
+;
+X074c:	mov	a,@r1
+	anl	a,#0a0h
+	xrl	a,#0a0h
+	jnz	X0740
+	mov	a,r1
+	add	a,#17h
+	ret
+;
+X0757:	sel	rb1
+	mov	r1,a
+	jb6	X0765
+	jb5	X0761
+	mov	r3,#4bh
+	jmp	X076d
+;
+X0761:	mov	r3,#64h
+	jmp	X076d
+;
+X0765:	jb5	X076b
+	mov	r3,#7dh
+	jmp	X076d
+;
+X076b:	mov	r3,#96h
+X076d:	anl	a,#1fh
+	add	a,#75h
+	movp	a,@a
+	mov	r2,a
+	sel	rb0
+	ret
+org 775h	
+; lookup table 19 1c 1f  22 26 29 2c 2f 32 39 3f 45 4b 51 58 5e 64 70 7d  89 95 a4 af bd c8 e3 fa 8b 98 a1 ac b9 
+; routine to set / reset leds.
+X0795:
+	jb2 X07a2
+	orl	p2,#1
+X0799:	jb1	X07a6
+	orl	p2,#2
+X079d:	jb0	X07aa
+	orl	p2,#4
+	ret
+x07a2:
+	anl	p2,#0feh
+	jmp	X0799
+X07a6:	anl	p2,#0fdh
+	jmp	X079d
+X07aa:	anl	p2,#0fbh
+	ret
+;
+X07ad:	mov	r1,#20h
+	mov	r5,#36h
+X07b1:	mov	a,#33h
+	anl	a,@r1
+	mov	@r1,a
+	inc	r1
+	djnz	r5,X07b1
+	mov	r1,#20h
+	mov	r5,#36h
+X07bc:	mov	a,r7
+	orl	a,@r1
+X07be:	mov	@r1,a
+	inc	r1
+	djnz	r5,X07bc
+	ret
+;
+
+;
+X07f2:	dec	r1
+X07f3:	mov	a,r1
+	movp	a,@a
+	add	a,r0
+	mov	r0,a
+	djnz	r1,X07f3
+	mov	a,r1
+	movp	a,@a
+	add	a,r0
+	mov	r0,a
+	mov	a,r0
+	ret
+;
+	add	a,r3
+;
+;	Miscellaneous equates
+;
+;  These are addresses referenced in the code but
+;  which are in the middle of a multibyte instruction
+;  or are addresses outside the initialized space
+;
+X0015	equ	15h
+X012d	equ	12dh
+X0133	equ	133h
+X025b	equ	25bh
+X0313	equ	313h
+X0317	equ	317h
+X0370	equ	370h
+X0372	equ	372h
+X06c1	equ	6c1h
+X07e8	equ	7e8h
+X0d00	equ	0d00h
+;
+	end
+;
+
