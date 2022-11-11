@@ -20,8 +20,8 @@ X0012:	jtf	X0016
 	jmp	X0012
 ;
 X0016:	mov	a,#0d2h
-	call	X02dc				 ; set tiemout	
-	djnz	r2,X0012
+	call	X02dc				 ; set tiemout	210 * 1.36 = 285 us
+	djnz	r2,X0012                         ; Loop 150 times. Total delay of 47 ms. Actual delay 333 ms???
 X001c:	stop	tcnt
 	jtf	X001f
 X001f:	sel	rb0
