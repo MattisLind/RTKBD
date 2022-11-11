@@ -55,6 +55,8 @@ After this the host sends
 | ED 00   |  Set LEDs       |
 |  F4     |  Enable Keybaord |
 
+The keyboard is thus setup for Make/Break/Typematic for all keys except for the action key (58h) which is Make/Break only 
+
 ![](https://github.com/MattisLind/RTKBD/blob/main/images/CommandsReceivedF5hF3h4BhFCh58hFAh61h6Ah63h60hEDh00hF4h.png?raw=true)
 
 After this the system boots normally
