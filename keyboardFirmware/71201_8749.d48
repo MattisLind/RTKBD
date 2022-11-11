@@ -20,8 +20,8 @@ X0012:	jtf	X0016
 	jmp	X0012
 ;
 X0016:	mov	a,#0d2h
-	call	X02dc				 ; set tiemout	210 * 1.36 = 285 us
-	djnz	r2,X0012                         ; Loop 150 times. Total delay of 47 ms. Actual delay 333 ms???
+	call	X02dc				 ; set tiemout	(256-210) * 1.36 * 32 = 2 ms
+	djnz	r2,X0012                         ; Loop 150 times. Total delay of 300ms. Actual delay 333 ms
 X001c:	stop	tcnt
 	jtf	X001f
 X001f:	sel	rb0
@@ -45,7 +45,7 @@ X003c:	jnt0	X003c    ; wait while clk is low.
 	jni	X0058            ; jump if data is low
 X0040:	mov	a,r0       ; move value to send into a
 	call	send          ; send it!
-	call	delay210       ; set timer 210. Each cycle is 1.36 MHz @ 11 MHz  = 286 us.
+	call	delay210       ; set timer 210. Each cycle is 1.36 * 32 MHz @ 11 MHz  = 2 mss.
 X0045:	jnt0	X0049    ; jump if clock low
 	jni	X004d	           ; jump if data is low
 X0049:	jtf	X005c			 ; the timer has expired
@@ -62,7 +62,7 @@ X0054:	clr	a
 X0058:	call	receive  ; we get here if data is low do a  receive
 	jmp	X0054
 ;
-X005c:	call	delay119  ; start timer value 119 = 162 us.
+X005c:	call	delay119  ; start timer value (256-119) * 32 * 1.36 = 6 ms.
 X005e:	jnt0	X006c  ; jump if clock is low
 	jni	X004d          ; clk is high - what is data? 
 	call	stopcounter  ; data was high as well. 
@@ -96,7 +96,7 @@ X07d5:	call	stopCounterAndReceive     ; data is low clock is high
 	jz	X07f0
 	jmp	X0053
 ;
-X07dd:	call	delay119     ; data is high clock is high
+X07dd:	call	delay119     ; data is high clock is high 6 ms delay
 X07df:	jnt0	X07ec     ; jump if clock is low
 	jni	X07d5             ; jump if data is low
 X07e3:	call	stopcounter     ; stop timer and clear flag
