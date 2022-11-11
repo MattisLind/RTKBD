@@ -43,12 +43,14 @@ The keyboard will respond with FCh to this command since it is not supported.
 
 After this the host sends 
 
-F5
-F3 4B
-FC 58
-FA 61 6A 63 60
-ED 00
-F4
+|  Code   |     Description |
+|---------|-----------------|
+|  F5     |  Disable Keyboard    |
+| F3 4B   |  Set typematic  |
+| FC 58   |  Action key     |
+| FA 61 6A 63 60 |  Arrow keys |
+| ED 00   |  Set LEDs       |
+|  F4     |  Enable Keybaord |
 
 ![](https://github.com/MattisLind/RTKBD/blob/main/images/CommandsReceivedF5hF3h4BhFCh58hFAh61h6Ah63h60hEDh00hF4h.png?raw=true)
 
