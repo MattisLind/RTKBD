@@ -6,9 +6,11 @@ Since I had trouble getting emulation working with the existing PS2Dev Arduino l
 
 ## Dumps
 
+To get more information I cobbled together some code in a STM32 that could sniff the data and clock lines of the PS/2 bus. It monitored any changes on these lines and stored a timestamp (in microseconds relative to the start of the microcontroller).
+
 The dumps directory contains vcd (Value Change Dumps) for the protocol used between the RT host and the RT keyboard.
 
-The actual RESET sequence received after power on reset has not been grabbed since we got trouble when capturing this part. On the other hand the sequence initated with the RESET command is identical.
+The actual RESET sequence received after power on reset has not been grabbed since I got trouble when capturing this part. On the other hand the sequence initated with the RESET command is identical.
 
 This sequence below happens directly after start of the computer until it goes into startup step 09.
 
@@ -74,5 +76,11 @@ and BRAKE (F0h 5Ah)
 ![](https://github.com/MattisLind/RTKBD/blob/main/images/Break5AhEnter.png?raw=true)
 
 
+## Implementation
 
+There are two parts, one that communicate with the host, emulating a RT keyboard. This is basically the reverseengineered code from the disassembly of the original keyboard. It is implemented as faithful as possible trying to mimic all the delays that were used in the original implementation. In the pursuit to be as exact as possible many of the jump instruction used in the original code has been implemented as goto in C. Perhaps not the moste beautiful code but it is very close to the original.
+
+The second part is an interrupt driven host-emulator which interfaces with the IBM PS/2 keyboard. It tries to reset the keyboard at start and then waits for the reset reseponse. Whenever this comes it will try to execute a set of orders to the keyboard to force it into scan code set 3 and also set all keys (except action which is just make/brake) as make/break/typematic.
+
+After this the device will monitor for incoming messages and forward it to the other end.
 
